@@ -1,0 +1,52 @@
+                        const listItem = document.createElement('li');
+                        listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                        
+                        if (suggestion.title) {
+                            const title = document.createElement('h6');
+                            title.textContent = suggestion.title;
+                            listItem.appendChild(title);
+                        }
+                        
+                        const description = document.createElement('p');
+                        description.textContent = suggestion.description;
+                        listItem.appendChild(description);
+                        
+                        suggestionsList.appendChild(listItem);
+                    });
+                } else {
+                    const listItem = document.createElement('li');
+                    listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                    listItem.textContent = 'No optimization suggestions available for this query.';
+                    suggestionsList.appendChild(listItem);
+                }
+            } catch (error) {
+                showOptimizationStatus('Error', 'Network error: ' + error.message);
+            }
+        } else {
+            // Hide optimization container
+            optimizationContainer.classList.add('d-none');
+        }
+    });
+    
+    function showOptimizationStatus(heading, message, showApiKeyInput = false) {
+        document.getElementById("optimization-loading").classList.add("d-none");
+        document.getElementById("optimization-status-container").classList.remove("d-none");
+        document.getElementById("optimization-status-heading").textContent = heading;
+        document.getElementById("optimization-status-message").textContent = message;
+        
+        // Show or hide API key input
+        const apiKeyInputContainer = document.getElementById("api-key-input-container");
+        if (showApiKeyInput) {
+            apiKeyInputContainer.classList.remove("d-none");
+        } else {
+            apiKeyInputContainer.classList.add("d-none");
+        }
+    }
+    
+    function showError(message) {
+        const errorContainer = document.getElementById('error-container');
+        errorContainer.classList.remove('d-none');
+        document.getElementById('error-message').textContent = message;
+    }
+</script>
+{% endblock %}
