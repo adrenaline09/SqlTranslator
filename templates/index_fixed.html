@@ -1,0 +1,21 @@
+                        const listItem = document.createElement('li');
+                        listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                        
+                        if (suggestion.title) {
+                            const title = document.createElement('h6');
+                            title.textContent = suggestion.title;
+                            listItem.appendChild(title);
+                        }
+                        
+                        const description = document.createElement('p');
+                        description.textContent = suggestion.description;
+                        listItem.appendChild(description);
+                        
+                        suggestionsList.appendChild(listItem);
+    function showError(message) {
+        const errorContainer = document.getElementById('error-container');
+        errorContainer.classList.remove('d-none');
+        document.getElementById('error-message').textContent = message;
+    }
+</script>
+{% endblock %}

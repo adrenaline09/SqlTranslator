@@ -1,0 +1,387 @@
+{% extends 'base.html' %}
+
+{% block title %}SQL Dependency Analyzer{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card bg-dark border-primary">
+            <div class="card-header bg-primary text-white">
+                <h2>SQL Dependency Analyzer</h2>
+            </div>
+            <div class="card-body">
+                <p class="lead">
+                    Analyze a batch of SQL queries to determine table dependencies and the correct order for table creation.
+                </p>
+                <form id="dependency-form">
+                    <div class="mb-3">
+                        <label for="sql-batch" class="form-label">SQL Batch (up to 1000 queries)</label>
+                        <textarea id="sql-batch" class="form-control bg-dark text-light" rows="10" 
+                            placeholder="Enter multiple SQL queries separated by semicolons..."></textarea>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Analyze Dependencies</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="result-container" class="row mt-4 d-none">
+    <div class="col-12">
+        <div class="card bg-dark border-success">
+            <div class="card-header bg-success text-white">
+                <h3>Dependency Analysis Results</h3>
+            </div>
+            <div class="card-body">
+                <!-- Table creation order -->
+                <div class="mb-4">
+                    <h4>Table Creation Order</h4>
+                    <p class="text-muted">Tables should be created or imported in this order:</p>
+                    <ol id="table-order-list" class="list-group list-group-numbered bg-dark"></ol>
+                </div>
+                
+                <!-- External dependencies -->
+                <div class="mb-4" id="external-dependencies-section">
+                    <h4>External Dependencies</h4>
+                    <p class="text-muted">These tables are referenced but not created in any query. They might need to be imported or created separately:</p>
+                    <ul id="external-dependencies-list" class="list-group bg-dark"></ul>
+                </div>
+                
+                <!-- Query details accordion -->
+                <div class="mb-4">
+                    <h4>Query Details</h4>
+                    <div class="accordion" id="queryAccordion">
+                        <!-- Query details will be inserted here -->
+                    </div>
+                </div>
+                
+                <!-- Summary -->
+                <div class="alert alert-info">
+                    <h4 class="alert-heading">Summary</h4>
+                    <p id="summary-text"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="error-container" class="row mt-4 d-none">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <h4 class="alert-heading">Error</h4>
+            <p id="error-message"></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize CodeMirror for SQL editor
+    const batchEditor = CodeMirror.fromTextArea(document.getElementById('sql-batch'), {
+        mode: 'text/x-sql',
+        theme: 'darcula',
+        lineNumbers: true,
+        indentWithTabs: true,
+        smartIndent: true,
+        lineWrapping: true,
+        extraKeys: {"Ctrl-Space": "autocomplete"}
+    });
+    
+    document.getElementById('dependency-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const sqlBatch = batchEditor.getValue();
+        
+        // Hide previous results and errors
+        document.getElementById('result-container').classList.add('d-none');
+        document.getElementById('error-container').classList.add('d-none');
+        
+        // Validate input
+        if (!sqlBatch.trim()) {
+            showError('Please enter SQL queries to analyze');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/analyze-dependencies', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sql_batch: sqlBatch
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                showError(data.error || 'An error occurred during analysis');
+                return;
+            }
+            
+            // Show results
+            displayResults(data);
+            
+        } catch (error) {
+            showError('Network error: ' + error.message);
+        }
+    });
+    
+    function displayResults(data) {
+        // Clear previous results
+        document.getElementById('table-order-list').innerHTML = '';
+        document.getElementById('external-dependencies-list').innerHTML = '';
+        document.getElementById('queryAccordion').innerHTML = '';
+        
+        // Display table creation order
+        const tableOrderList = document.getElementById('table-order-list');
+        data.table_creation_order.forEach(table => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item bg-dark text-light border-secondary';
+            listItem.textContent = table;
+            tableOrderList.appendChild(listItem);
+        });
+        
+        // Display external dependencies
+        const externalDepsSection = document.getElementById('external-dependencies-section');
+        const externalDepsList = document.getElementById('external-dependencies-list');
+        
+        if (data.external_dependencies.length === 0) {
+            externalDepsSection.classList.add('d-none');
+        } else {
+            externalDepsSection.classList.remove('d-none');
+            data.external_dependencies.forEach(table => {
+                const listItem = document.createElement('li');
+                listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                listItem.textContent = table;
+                externalDepsList.appendChild(listItem);
+            });
+        }
+        
+        // Display query details in accordion
+        const queryAccordion = document.getElementById('queryAccordion');
+        data.query_details.forEach((query, index) => {
+            const accordionItem = document.createElement('div');
+            accordionItem.className = 'accordion-item bg-dark text-light border-secondary';
+            
+            // Create accordion header
+            const headerId = `heading${index}`;
+            const accordionHeader = document.createElement('h2');
+            accordionHeader.className = 'accordion-header';
+            accordionHeader.id = headerId;
+            
+            const buttonText = query.creates.length > 0 
+                ? `Query ${index + 1}: Creates ${query.creates.join(', ')}` 
+                : `Query ${index + 1}: References only`;
+            
+            const button = document.createElement('button');
+            button.className = 'accordion-button bg-dark text-light collapsed';
+            button.type = 'button';
+            button.dataset.bsToggle = 'collapse';
+            button.dataset.bsTarget = `#collapse${index}`;
+            button.setAttribute('aria-expanded', 'false');
+            button.setAttribute('aria-controls', `collapse${index}`);
+            button.textContent = buttonText;
+            
+            accordionHeader.appendChild(button);
+            accordionItem.appendChild(accordionHeader);
+            
+            // Create accordion body
+            const collapseDiv = document.createElement('div');
+            collapseDiv.id = `collapse${index}`;
+            collapseDiv.className = 'accordion-collapse collapse';
+            collapseDiv.setAttribute('aria-labelledby', headerId);
+            collapseDiv.dataset.bsParent = '#queryAccordion';
+            
+            const accordionBody = document.createElement('div');
+            accordionBody.className = 'accordion-body';
+            
+            // Query SQL
+            const queryTitle = document.createElement('h5');
+            queryTitle.textContent = 'SQL Query:';
+            accordionBody.appendChild(queryTitle);
+            
+            const queryDiv = document.createElement('div');
+            queryDiv.className = 'query-sql mb-3';
+            queryDiv.dataset.queryIndex = index;
+            queryDiv.textContent = query.query;
+            accordionBody.appendChild(queryDiv);
+            
+            // Tables info
+            const tablesInfo = document.createElement('div');
+            tablesInfo.className = 'row';
+            
+            // Created tables
+            const createdTablesCol = document.createElement('div');
+            createdTablesCol.className = 'col-md-6 mb-3';
+            
+            const createdTablesTitle = document.createElement('h6');
+            createdTablesTitle.textContent = 'Created Tables:';
+            createdTablesCol.appendChild(createdTablesTitle);
+            
+            if (query.creates.length === 0) {
+                const noTables = document.createElement('p');
+                noTables.className = 'text-muted';
+                noTables.textContent = 'No tables created in this query.';
+                createdTablesCol.appendChild(noTables);
+            } else {
+                const createsList = document.createElement('ul');
+                createsList.className = 'list-group bg-dark';
+                query.creates.forEach(table => {
+                    const listItem = document.createElement('li');
+                    listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                    listItem.textContent = table;
+                    createsList.appendChild(listItem);
+                });
+                createdTablesCol.appendChild(createsList);
+            }
+            
+            tablesInfo.appendChild(createdTablesCol);
+            
+            // Referenced tables
+            const referencedTablesCol = document.createElement('div');
+            referencedTablesCol.className = 'col-md-6 mb-3';
+            
+            const referencedTablesTitle = document.createElement('h6');
+            referencedTablesTitle.textContent = 'Referenced Tables:';
+            referencedTablesCol.appendChild(referencedTablesTitle);
+            
+            if (query.references.length === 0) {
+                const noTables = document.createElement('p');
+                noTables.className = 'text-muted';
+                noTables.textContent = 'No tables referenced in this query.';
+                referencedTablesCol.appendChild(noTables);
+            } else {
+                const referencesList = document.createElement('ul');
+                referencesList.className = 'list-group bg-dark';
+                query.references.forEach(table => {
+                    const listItem = document.createElement('li');
+                    listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                    listItem.textContent = table;
+                    referencesList.appendChild(listItem);
+                });
+                referencedTablesCol.appendChild(referencesList);
+            }
+            
+            tablesInfo.appendChild(referencedTablesCol);
+            accordionBody.appendChild(tablesInfo);
+            
+            collapseDiv.appendChild(accordionBody);
+            accordionItem.appendChild(collapseDiv);
+            
+            queryAccordion.appendChild(accordionItem);
+        });
+        
+        // Update summary
+        document.getElementById('summary-text').textContent = 
+            `Analyzed ${data.total_queries} SQL queries with ${data.total_tables} tables. ` + 
+            `${data.table_creation_order.length} tables need to be created in the specific order, ` +
+            `and ${data.external_dependencies.length} external dependencies were identified.`;
+        
+        // Show result container
+        document.getElementById('result-container').classList.remove('d-none');
+        
+        // Initialize CodeMirror for query SQL
+        document.querySelectorAll('.query-sql').forEach(element => {
+            const queryEditor = CodeMirror(element, {
+                value: element.textContent.trim(),
+                mode: 'text/x-sql',
+                theme: 'darcula',
+                lineNumbers: true,
+                readOnly: true,
+                lineWrapping: true
+            });
+            element.textContent = '';
+        });
+    }
+    
+    function showError(message) {
+        const errorContainer = document.getElementById('error-container');
+        errorContainer.classList.remove('d-none');
+        document.getElementById('error-message').textContent = message;
+    }
+    
+    // Add example SQL queries for the user to try
+    document.addEventListener('DOMContentLoaded', function() {
+        const exampleQueries = `
+-- Create tables with dependencies
+CREATE TABLE departments (
+    department_id INT PRIMARY KEY,
+    department_name VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE locations (
+    location_id INT PRIMARY KEY,
+    city VARCHAR(50) NOT NULL,
+    state VARCHAR(50),
+    country VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE employees (
+    employee_id INT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    hire_date DATE NOT NULL,
+    department_id INT,
+    FOREIGN KEY (department_id) REFERENCES departments(department_id)
+);
+
+CREATE TABLE department_locations (
+    department_id INT,
+    location_id INT,
+    primary_location BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (department_id) REFERENCES departments(department_id),
+    FOREIGN KEY (location_id) REFERENCES locations(location_id),
+    PRIMARY KEY (department_id, location_id)
+);
+
+CREATE TABLE projects (
+    project_id INT PRIMARY KEY,
+    project_name VARCHAR(100) NOT NULL,
+    start_date DATE,
+    end_date DATE,
+    department_id INT,
+    FOREIGN KEY (department_id) REFERENCES departments(department_id)
+);
+
+CREATE TABLE employee_projects (
+    employee_id INT,
+    project_id INT,
+    role VARCHAR(50),
+    FOREIGN KEY (employee_id) REFERENCES employees(employee_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id),
+    PRIMARY KEY (employee_id, project_id)
+);
+
+-- Additional tables with circular references
+CREATE TABLE managers (
+    manager_id INT PRIMARY KEY,
+    employee_id INT UNIQUE,
+    from_date DATE,
+    FOREIGN KEY (employee_id) REFERENCES employees(employee_id)
+);
+
+-- This creates a circular dependency
+ALTER TABLE employees ADD COLUMN manager_id INT;
+ALTER TABLE employees ADD CONSTRAINT fk_manager FOREIGN KEY (manager_id) REFERENCES managers(manager_id);
+
+-- Add some external dependencies to demonstrate that feature
+INSERT INTO salary_grades (grade_id, min_salary, max_salary) VALUES (1, 30000, 50000);
+
+SELECT e.employee_id, e.first_name, e.last_name, d.department_name
+FROM employees e
+JOIN departments d ON e.department_id = d.department_id
+WHERE e.hire_date > '2020-01-01';
+`;
+        
+        // Set example queries when the Analyze Dependencies page loads
+        batchEditor.setValue(exampleQueries);
+    });
+</script>
+{% endblock %}

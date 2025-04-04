@@ -1,0 +1,400 @@
+{% extends 'base.html' %}
+
+{% block title %}SQL Converter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card bg-dark border-primary">
+            <div class="card-header bg-primary text-white">
+                <h2>SQL Dialect Converter</h2>
+            </div>
+            <div class="card-body">
+                <form id="converter-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="source-dialect" class="form-label">Source Dialect</label>
+                            <select id="source-dialect" class="form-select bg-dark text-light">
+                                {% for dialect in dialects %}
+                                <option value="{{ dialect }}">{{ dialect|upper }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="target-dialect" class="form-label">Target Dialect</label>
+                            <select id="target-dialect" class="form-select bg-dark text-light">
+                                {% for dialect in dialects %}
+                                <option value="{{ dialect }}" {% if dialect != dialects[0] %}selected{% endif %}>{{ dialect|upper }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="source-sql" class="form-label">SQL Query</label>
+                        <textarea id="source-sql" class="form-control bg-dark text-light" rows="5" placeholder="Enter your SQL query here..."></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="custom-removals-toggle">
+                            <label class="form-check-label" for="custom-removals-toggle">Enable Custom Removals</label>
+                        </div>
+                        <div id="custom-removals-container" class="mt-2 d-none">
+                            <label for="custom-removals" class="form-label">
+                                Custom Strings/Patterns to Remove 
+                                <small class="text-muted">(Enter one per line, can include regex patterns)</small>
+                            </label>
+                            <textarea id="custom-removals" class="form-control bg-dark text-light" rows="3" 
+                                placeholder="Example:&#10;NOLOGGING&#10;/\\* \\*/$&#10;STATS_MODE"></textarea>
+                            <small class="text-muted">These strings or regex patterns will be removed from your SQL before conversion.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Convert</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="result-container" class="row mt-4 d-none">
+    <div class="col-12">
+        <div class="card bg-dark border-success">
+            <div class="card-header bg-success text-white">
+                <h3>Converted SQL</h3>
+            </div>
+            <div class="card-body">
+                <div id="converted-sql-container">
+                    <textarea id="converted-sql" class="form-control bg-dark text-light" rows="5" readonly></textarea>
+                </div>
+                <div class="mt-3 d-flex gap-2 align-items-center">
+                    <button id="copy-btn" class="btn btn-outline-light">Copy to Clipboard</button>
+                    <div class="form-check form-switch ms-3">
+                        <input class="form-check-input" type="checkbox" id="ai-optimization-toggle">
+                        <label class="form-check-label" for="ai-optimization-toggle">AI Optimization</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="optimization-container" class="row mt-4 d-none">
+    <div class="col-12">
+        <div class="card bg-dark border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h3>SQL Optimization Suggestions</h3>
+            </div>
+            <div class="card-body">
+                <div id="optimization-loading" class="text-center d-none">
+                    <div class="spinner-border text-warning" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Generating optimization suggestions...</p>
+                </div>
+                <div id="optimization-status-container" class="d-none">
+                    <div class="alert alert-info">
+                        <h5 class="alert-heading" id="optimization-status-heading">AI Optimization Status</h5>
+                        <p id="optimization-status-message"></p>
+                    </div>
+                </div>
+                <div id="optimization-results-container" class="d-none">
+                    <h5>Suggestions:</h5>
+                    <ul id="optimization-suggestions" class="list-group list-group-flush bg-dark"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="error-container" class="row mt-4 d-none">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <h4 class="alert-heading">Error</h4>
+            <p id="error-message"></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize CodeMirror for SQL editor
+    const sourceEditor = CodeMirror.fromTextArea(document.getElementById('source-sql'), {
+        mode: 'text/x-sql',
+        theme: 'darcula',
+        lineNumbers: true,
+        indentWithTabs: true,
+        smartIndent: true,
+        lineWrapping: true,
+        extraKeys: {"Ctrl-Space": "autocomplete"}
+    });
+    
+    let resultEditor;
+    
+    // Check for example from localStorage (coming from examples page)
+    document.addEventListener('DOMContentLoaded', function() {
+        const storedSql = localStorage.getItem('sqlExample');
+        const storedSourceDialect = localStorage.getItem('sourceDialect');
+        const storedTargetDialect = localStorage.getItem('targetDialect');
+        
+        if (storedSql && storedSourceDialect && storedTargetDialect) {
+            // Set the stored values
+            sourceEditor.setValue(storedSql);
+            
+            // Set select dropdowns
+            const sourceDialectSelect = document.getElementById('source-dialect');
+            const targetDialectSelect = document.getElementById('target-dialect');
+            
+            for(let i = 0; i < sourceDialectSelect.options.length; i++) {
+                if (sourceDialectSelect.options[i].value === storedSourceDialect) {
+                    sourceDialectSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            for(let i = 0; i < targetDialectSelect.options.length; i++) {
+                if (targetDialectSelect.options[i].value === storedTargetDialect) {
+                    targetDialectSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            // Clear localStorage to prevent auto-filling on future visits
+            localStorage.removeItem('sqlExample');
+            localStorage.removeItem('sourceDialect');
+            localStorage.removeItem('targetDialect');
+            
+            // Auto-submit form to convert the example
+            document.getElementById('converter-form').dispatchEvent(new Event('submit'));
+        }
+    });
+    
+    // Toggle custom removals section when checkbox is clicked
+    document.getElementById('custom-removals-toggle').addEventListener('change', function() {
+        const container = document.getElementById('custom-removals-container');
+        if (this.checked) {
+            container.classList.remove('d-none');
+        } else {
+            container.classList.add('d-none');
+        }
+    });
+    
+    document.getElementById('converter-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const sourceDialect = document.getElementById('source-dialect').value;
+        const targetDialect = document.getElementById('target-dialect').value;
+        const sql = sourceEditor.getValue();
+        
+        // Hide previous results and errors
+        document.getElementById('result-container').classList.add('d-none');
+        document.getElementById('optimization-container').classList.add('d-none');
+        document.getElementById('error-container').classList.add('d-none');
+        
+        // Reset AI optimization toggle
+        document.getElementById('ai-optimization-toggle').checked = false;
+        
+        // Validate input
+        if (!sql.trim()) {
+            showError('Please enter a SQL query');
+            return;
+        }
+        
+        // Get custom removals if enabled
+        let customRemovalsArray = null;
+        const customRemovalsToggle = document.getElementById('custom-removals-toggle');
+        if (customRemovalsToggle.checked) {
+            const customRemovalsText = document.getElementById('custom-removals').value;
+            if (customRemovalsText.trim()) {
+                // Split by lines and filter out empty lines
+                customRemovalsArray = customRemovalsText
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0);
+            }
+        }
+        
+        try {
+            const response = await fetch('/api/convert', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sql: sql,
+                    source_dialect: sourceDialect,
+                    target_dialect: targetDialect,
+                    custom_removals: customRemovalsArray
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                showError(data.error || 'An error occurred during conversion');
+                return;
+            }
+            
+            // Show result
+            document.getElementById('result-container').classList.remove('d-none');
+            
+            // Update the result textarea and initialize CodeMirror if not done
+            if (!resultEditor) {
+                document.getElementById('converted-sql').value = data.converted_sql;
+                resultEditor = CodeMirror.fromTextArea(document.getElementById('converted-sql'), {
+                    mode: 'text/x-sql',
+                    theme: 'darcula',
+                    lineNumbers: true,
+                    readOnly: true,
+                    lineWrapping: true
+                });
+            } else {
+                resultEditor.setValue(data.converted_sql);
+            }
+        } catch (error) {
+            showError('Network error: ' + error.message);
+        }
+    });
+    
+    document.getElementById('copy-btn').addEventListener('click', function() {
+        const convertedSql = resultEditor ? resultEditor.getValue() : document.getElementById('converted-sql').value;
+        navigator.clipboard.writeText(convertedSql)
+            .then(() => {
+                const copyBtn = this;
+                copyBtn.textContent = 'Copied!';
+                copyBtn.classList.add('btn-success');
+                copyBtn.classList.remove('btn-outline-light');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy to Clipboard';
+                    copyBtn.classList.remove('btn-success');
+                    copyBtn.classList.add('btn-outline-light');
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy: ', err);
+            });
+    });
+    
+    // AI Optimization Toggle
+    document.getElementById('ai-optimization-toggle').addEventListener('change', async function() {
+        const optimizationContainer = document.getElementById('optimization-container');
+        
+        if (this.checked) {
+            // Show optimization container
+            optimizationContainer.classList.remove('d-none');
+            
+            // Get the current SQL from the result editor
+            const sql = resultEditor ? resultEditor.getValue() : document.getElementById('converted-sql').value;
+            
+            // Get the current target dialect
+            const targetDialect = document.getElementById('target-dialect').value;
+            
+            try {
+                // First check if optimization is available
+                document.getElementById('optimization-loading').classList.remove('d-none');
+                document.getElementById('optimization-status-container').classList.add('d-none');
+                document.getElementById('optimization-results-container').classList.add('d-none');
+                
+                const statusResponse = await fetch('/api/optimization-status');
+                const statusData = await statusResponse.json();
+                
+                if (!statusResponse.ok) {
+                    showOptimizationStatus('Error', statusData.message || 'An error occurred while checking optimization status');
+                    return;
+                }
+                
+                if (!statusData.available) {
+                    showOptimizationStatus('Feature Not Available', statusData.message || 'AI optimization requires an OpenAI API key');
+                    return;
+                }
+                
+                // If available, get optimization suggestions
+                const optimizeResponse = await fetch('/api/optimize-sql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sql: sql,
+                        dialect: targetDialect
+                    })
+                });
+                
+                const optimizeData = await optimizeResponse.json();
+                
+                if (!optimizeResponse.ok) {
+                    showOptimizationStatus('Error', optimizeData.message || 'An error occurred during optimization');
+                    return;
+                }
+                
+                if (!optimizeData.available) {
+                    showOptimizationStatus('Feature Not Available', optimizeData.message);
+                    return;
+                }
+                
+                // Show optimization suggestions
+                document.getElementById('optimization-loading').classList.add('d-none');
+                document.getElementById('optimization-results-container').classList.remove('d-none');
+                
+                const suggestionsList = document.getElementById('optimization-suggestions');
+                suggestionsList.innerHTML = '';
+                
+                if (optimizeData.suggestions && optimizeData.suggestions.length > 0) {
+                    optimizeData.suggestions.forEach(suggestion => {
+                        const listItem = document.createElement('li');
+                        listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                        
+                        if (suggestion.title) {
+                            const title = document.createElement('h6');
+                            title.textContent = suggestion.title;
+                            listItem.appendChild(title);
+                        }
+                        
+                        const description = document.createElement('p');
+                        description.textContent = suggestion.description;
+                        listItem.appendChild(description);
+                        
+                        suggestionsList.appendChild(listItem);
+                    });
+                } else {
+                    const listItem = document.createElement('li');
+                    listItem.className = 'list-group-item bg-dark text-light border-secondary';
+                    listItem.textContent = 'No optimization suggestions available for this query.';
+                    suggestionsList.appendChild(listItem);
+                }
+            } catch (error) {
+                showOptimizationStatus('Error', 'Network error: ' + error.message);
+            }
+        } else {
+            // Hide optimization container
+            optimizationContainer.classList.add('d-none');
+        }
+    });
+    
+    function showOptimizationStatus(heading, message, showApiKeyInput = false) {
+        document.getElementById('optimization-loading').classList.add('d-none');
+        document.getElementById('optimization-status-container').classList.remove('d-none');
+        document.getElementById('optimization-status-heading').textContent = heading;
+        document.getElementById('optimization-status-message').textContent = message;
+        
+        // Show or hide API key input
+        const apiKeyInputContainer = document.getElementById('api-key-input-container');
+        if (showApiKeyInput) {
+            apiKeyInputContainer.classList.remove('d-none');
+        } else {
+            apiKeyInputContainer.classList.add('d-none');
+        }
+    }
+    
+    function showError(message) {
+        const errorContainer = document.getElementById('error-container');
+        errorContainer.classList.remove('d-none');
+        document.getElementById('error-message').textContent = message;
+    }
+</script>
+{% endblock %}

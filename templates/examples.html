@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}SQL Converter Examples{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card bg-dark border-info">
+            <div class="card-header bg-info text-white">
+                <h2>Example Conversions</h2>
+            </div>
+            <div class="card-body">
+                <p class="lead">Explore these example SQL conversions between different dialects.</p>
+                
+                <div class="accordion" id="examplesAccordion">
+                    {% for example in examples %}
+                    <div class="accordion-item bg-dark text-light border-secondary">
+                        <h2 class="accordion-header" id="heading{{ loop.index }}">
+                            <button class="accordion-button bg-dark text-light collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                                {{ example.title }}
+                            </button>
+                        </h2>
+                        <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#examplesAccordion">
+                            <div class="accordion-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h5>Source SQL ({{ example.source_dialect|upper }})</h5>
+                                        <div class="source-sql-example" data-index="{{ loop.index }}">{{ example.sql }}</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h5>Converted SQL ({{ example.target_dialect|upper }})</h5>
+                                        <div class="converted-sql-example" data-index="{{ loop.index }}">{{ example.converted_sql }}</div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-primary btn-sm try-example" data-index="{{ loop.index }}" data-sql="{{ example.sql }}" data-source="{{ example.source_dialect }}" data-target="{{ example.target_dialect }}">
+                                        Try this example
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize CodeMirror for all examples
+        document.querySelectorAll('.source-sql-example').forEach(function(element) {
+            const sourceEditor = CodeMirror(element, {
+                value: element.textContent.trim(),
+                mode: 'text/x-sql',
+                theme: 'darcula',
+                lineNumbers: true,
+                readOnly: true,
+                lineWrapping: true
+            });
+            element.textContent = '';
+        });
+        
+        document.querySelectorAll('.converted-sql-example').forEach(function(element) {
+            const resultEditor = CodeMirror(element, {
+                value: element.textContent.trim(),
+                mode: 'text/x-sql',
+                theme: 'darcula',
+                lineNumbers: true,
+                readOnly: true,
+                lineWrapping: true
+            });
+            element.textContent = '';
+        });
+        
+        // Handle "Try this example" button clicks
+        document.querySelectorAll('.try-example').forEach(function(button) {
+            button.addEventListener('click', function() {
+                // Get data directly from the button's data attributes instead of trying to find CodeMirror instance
+                const sourceSQL = this.getAttribute('data-sql');
+                const sourceDialect = this.getAttribute('data-source');
+                const targetDialect = this.getAttribute('data-target');
+                
+                // Store in localStorage
+                localStorage.setItem('sqlExample', sourceSQL);
+                localStorage.setItem('sourceDialect', sourceDialect);
+                localStorage.setItem('targetDialect', targetDialect);
+                
+                // Redirect to converter page
+                window.location.href = '/';
+            });
+        });
+    });
+</script>
+{% endblock %}
