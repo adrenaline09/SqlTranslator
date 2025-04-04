@@ -538,7 +538,7 @@ def create_templates():
     <footer class="bg-dark text-light py-3 mt-5">
         <div class="container text-center">
             <p>SQL Converter &copy; 2025</p>
-            <p>devms :) &copy;</p>
+            <p>devms :)</p>
         </div>
     </footer>
 
